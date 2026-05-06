@@ -4870,8 +4870,12 @@ issue() {
     # renewal (--renew path), the CA advertises renewalInfo, and a prior
     # cert exists. --issue (even with --force) is not a renewal per RFC 9773
     # which speaks of "a clear predecessor certificate" issued by this CA.
+    # NO_ARI=1 (env, account.conf, or ca.conf) disables ARI entirely, so the
+    # "replaces" field is also omitted.
     _replaces_certID=""
-    if [ "$_ACME_IS_RENEW" = "1" ] && [ "$ACME_RENEWAL_INFO" ] && [ -f "$CERT_PATH" ]; then
+    if [ "$NO_ARI" = "1" ]; then
+      _debug "NO_ARI=1, omitting ARI 'replaces' field from newOrder"
+    elif [ "$_ACME_IS_RENEW" = "1" ] && [ "$ACME_RENEWAL_INFO" ] && [ -f "$CERT_PATH" ]; then
       _replaces_certID="$(_getARICertID "$CERT_PATH")"
       _debug "Adding ARI replaces" "$_replaces_certID"
     fi
@@ -5703,7 +5707,11 @@ $_authorizations_map"
   # with a time picked at random within the suggestedWindow. This both gives
   # the CA full control over renewal scheduling and disperses renewals across
   # the network so all clients don't hit the CA at the same instant.
-  if [ "$ACME_RENEWAL_INFO" ] && [ -f "$CERT_PATH" ] && [ -z "$_notAfter" ]; then
+  # Set NO_ARI=1 (env, account.conf, or ca.conf) to opt out and fall back to
+  # the legacy time-based renewal calculation.
+  if [ "$NO_ARI" = "1" ]; then
+    _debug "NO_ARI=1, skipping ARI suggestedWindow override"
+  elif [ "$ACME_RENEWAL_INFO" ] && [ -f "$CERT_PATH" ] && [ -z "$_notAfter" ]; then
     _ari_resp_new="$(_get_ARI "$CERT_PATH")"
     _debug2 "_ari_resp_new" "$_ari_resp_new"
     _ari_start_new="$(echo "$_ari_resp_new" | _egrep_o '"start" *: *"[^"]*' | sed 's/.*"//')"
@@ -5819,8 +5827,12 @@ renew() {
 
   # ARI (RFC 9773): fetch the CA's suggestedWindow on every renewal check.
   # If the window has started, renew now even if Le_NextRenewTime is in the future.
+  # Set NO_ARI=1 (env, account.conf, or ca.conf) to opt out and use only
+  # Le_NextRenewTime for the renewal decision.
   _ari_should_renew=""
-  if [ -z "$FORCE" ] && [ -f "$CERT_PATH" ]; then
+  if [ "$NO_ARI" = "1" ]; then
+    _debug "NO_ARI=1, skipping ARI suggestedWindow check"
+  elif [ -z "$FORCE" ] && [ -f "$CERT_PATH" ]; then
     if _initAPI && [ "$ACME_RENEWAL_INFO" ]; then
       _ari_resp="$(_get_ARI "$CERT_PATH")"
       _debug2 "_ari_resp" "$_ari_resp"
